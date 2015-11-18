@@ -6,13 +6,13 @@ import struct
 # class DexHeader(Structure):
 #     _fields_ = [
 #         ("magic", c_char * 8),
-#         ("checkSum", c_char * 4),
+#         ("chec"kSum", c_char * 4),
 #         ('signature', c_char * 20),
 #         ('fileSize', c_char * 4),
 #         ("headerSize", c_char * 4),
-#         ("linkSize", c_char * 4),
+#         ("lin"kSize", c_char * 4),
 #         ("endianTag", c_char * 4),
-#         ("linkOff", c_char * 4),
+#         ("lin"kOff", c_char * 4),
 #         ("mapOff", c_char * 4),
 #         ("stringIdsSize", c_char * 4),
 #         ("stringIdsOff", c_char * 4),
@@ -66,6 +66,39 @@ class DexStruct(object):
           "dataSize": 0,
           "dataOff": 0,   }
 
+    DexMapList = {
+        "size": 0,
+        "DexMapItem": []
+    }
+
+    # DexMapItem = {
+    #     "type" : 0
+    #     "unused" : 0
+    #     "size"  : 0
+    #     "offset" : 0
+    # }
+
+    DexMapItemCode = {
+        0x0000 : "kDexTypeHeaderItem"               ,
+        0x0001 : "kDexTypeStringIdItem"             ,
+        0x0002 : "kDexTypeTypeIdItem"               ,
+        0x0003 : "kDexTypeProtoIdItem"              ,
+        0x0004 : "kDexTypeFieldIdItem"              ,
+        0x0005 : "kDexTypeMethodIdItem"             ,
+        0x0006 : "kDexTypeClassDefItem"             ,
+        0x1000 : "kDexTypeMapList"                  ,
+        0x1001 : "kDexTypeTypeList"                 ,
+        0x1002 : "kDexTypeAnnotationSetRefList"     ,
+        0x1003 : "kDexTypeAnnotationSetItem"        ,
+        0x2000 : "kDexTypeClassDataItem"            ,
+        0x2001 : "kDexTypeCodeItem"                 ,
+        0x2002 : "kDexTypeStringDataItem"           ,
+        0x2003 : "kDexTypeDebugInfoItem"            ,
+        0x2004 : "kDexTypeAnnotationItem"           ,
+        0x2005 : "kDexTypeEncodedArrayItem"         ,
+        0x2006 : "kDexTypeAnnotationsDirectoryItem" ,
+    }
+
 
 def parseHeader(header_data):
 
@@ -102,10 +135,32 @@ def parseHeader(header_data):
         DexStruct.DexHeader['dataOff'] = struct.unpack('I',header_list[22])[0]
 
 
+def parseMapList(map_data):
+    DexStruct.DexMapList['size'] = struct.unpack('H',map_data[:2])[0]
+
+    curPos = 4
+    for x in range(DexStruct.DexMapList['size']):
+        tmpDexMapItem = {
+            "type" : struct.unpack('H',map_data[curPos:curPos+2])[0],
+            "unused" : 0,
+            "size"  : struct.unpack('I',map_data[curPos+4:curPos+8])[0],
+            "offset" : struct.unpack('I',map_data[curPos+8:curPos+12])[0] }
+        curPos += 12
+        DexStruct.DexMapList["DexMapItem"].append(tmpDexMapItem)
+
+
 if __name__ == '__main__':
 
     with open("classes.dex", 'rb') as f:
         parseHeader(f.read(0x70))
-        for x in DexStruct.DexHeader:
-            print x, hex(DexStruct.DexHeader[x])
+        f.seek(DexStruct.DexHeader['mapOff'])
+        parseMapList(f.read())
+
+        print 'type                 size            offset'
+        l = len(DexStruct.DexMapList['DexMapItem'])
+        for i in range(l):
+            print DexStruct.DexMapItemCode[DexStruct.DexMapList['DexMapItem'][i]['type']],
+            print hex(DexStruct.DexMapList['DexMapItem'][i]['size']),
+            print hex(DexStruct.DexMapList['DexMapItem'][i]['offset'])
+
         print f.tell()
