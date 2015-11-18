@@ -1,5 +1,5 @@
-from utils import read_file
-from ctypes import *
+# from utils import read_file
+# from ctypes import *
 import struct
 
 #import binascii
@@ -151,9 +151,14 @@ def parseMapList(map_data):
 
 if __name__ == '__main__':
 
-    with open("classes.dex", 'rb') as f:
+    with open(r"classes.dex", 'rb') as f:
         parseHeader(f.read(0x70))
+        # for x in DexStruct.DexHeader:
+        #     print x, hex(DexStruct.DexHeader[x])
+
         f.seek(DexStruct.DexHeader['mapOff'])
+        print f.tell()
+
         parseMapList(f.read())
 
         print 'type                 size            offset'
