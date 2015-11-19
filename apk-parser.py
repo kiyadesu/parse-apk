@@ -6,6 +6,8 @@ from zipfile import ZipFile
 from StringIO import StringIO
 import os.path
 
+
+# 暂时搁置，还不管用哟
 class apkParser():
     def __init__(self, apk_path):
         self.apk_path = apk_path

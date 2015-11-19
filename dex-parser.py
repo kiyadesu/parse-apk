@@ -1,3 +1,4 @@
+#coding:utf-8
 # from utils import read_file
 # from ctypes import *
 import struct
@@ -39,6 +40,7 @@ import struct
 # dex_ascii_list.insert(0,dex_ascii_data[:16])
 #print dex_ascii_list
 #header = DexHeader(*dex_ascii_list)
+
 
 class DexStruct(object):
     DexHeader = {
@@ -99,8 +101,17 @@ class DexStruct(object):
         0x2006 : "kDexTypeAnnotationsDirectoryItem" ,
     }
 
+    # DexStringItem = {
+    #     'offset' : 0,
+    #     'len' : 0,
+    #     'content' : '',
+    # }
 
-def parseHeader(header_data):
+    DexStrings = []
+
+
+def parseHeader(f):
+        header_data = f.read(0x70)
 
         header_list = [header_data[i:i+4] for i in range(32,112,4)]
         header_list.insert(0,header_data[12:32])
@@ -135,7 +146,10 @@ def parseHeader(header_data):
         DexStruct.DexHeader['dataOff'] = struct.unpack('I',header_list[22])[0]
 
 
-def parseMapList(map_data):
+def parseMapList(f):
+    f.seek(DexStruct.DexHeader['mapOff'])
+    map_data = f.read()
+
     DexStruct.DexMapList['size'] = struct.unpack('H',map_data[:2])[0]
 
     curPos = 4
@@ -149,23 +163,61 @@ def parseMapList(map_data):
         DexStruct.DexMapList["DexMapItem"].append(tmpDexMapItem)
 
 
+def readuleb128(f):
+    num = struct.unpack('B',f.read(1))[0]     # 读第一字节
+    if num > 0x7f :
+        cur = struct.unpack('B',f.read(1))[0]     #读第二字节
+        num = (num and 0x7f) or ((cur and 0x7f) << 7)
+        if cur > 0x7f:
+            cur = struct.unpack('B',f.read(1))[0]     #读第三字节
+            num = num or ((cur and 0x7f) << 14)
+            if cur > 0x7f:
+                cur = struct.unpack('B',f.read(1))[0]     #读第四字节
+                num = num or ((cur and 0x7f) << 21)
+                if cur > 0x7f:
+                    cur = struct.unpack('B',f.read(1))[0]     #读第五字节
+                    num = num or ((cur and 0x7f) << 28)
+    return num
+
+
+def parseStrings(f):
+    f.seek(DexStruct.DexHeader['stringIdsOff'])
+    stringIds_data = f.read(4*DexStruct.DexHeader['stringIdsSize'])
+
+    cur_pos = 0
+    for i in range(DexStruct.DexHeader['stringIdsSize']):
+        str_off =  struct.unpack('I',stringIds_data[cur_pos:cur_pos+4])[0]
+        f.seek(str_off)
+        str_len = readuleb128(f)
+        str_content = f.read(str_len)
+        cur_pos += 4
+        tmpDexStringItem = {
+            'offset' : str_off,
+            'len' : str_len,
+            'content' : str_content,
+        }
+        DexStruct.DexStrings.append(tmpDexStringItem)
+
+
+def parseDex(f):
+    parseHeader(f)
+    # for x in DexStruct.DexHeader:
+    #     print x, hex(DexStruct.DexHeader[x])
+
+    # parseMapList(f)
+    # l = len(DexStruct.DexMapList['DexMapItem'])
+    # for i in range(l):
+    #     print DexStruct.DexMapItemCode[DexStruct.DexMapList['DexMapItem'][i]['type']],
+    #     print hex(DexStruct.DexMapList['DexMapItem'][i]['size']),
+    #     print hex(DexStruct.DexMapList['DexMapItem'][i]['offset'])
+
+    parseStrings(f)
+    for x in DexStruct.DexStrings:
+        print hex(x['offset']),x['content']
+
+#*********************************************
+
 if __name__ == '__main__':
 
     with open(r"classes.dex", 'rb') as f:
-        parseHeader(f.read(0x70))
-        # for x in DexStruct.DexHeader:
-        #     print x, hex(DexStruct.DexHeader[x])
-
-        f.seek(DexStruct.DexHeader['mapOff'])
-        print f.tell()
-
-        parseMapList(f.read())
-
-        print 'type                 size            offset'
-        l = len(DexStruct.DexMapList['DexMapItem'])
-        for i in range(l):
-            print DexStruct.DexMapItemCode[DexStruct.DexMapList['DexMapItem'][i]['type']],
-            print hex(DexStruct.DexMapList['DexMapItem'][i]['size']),
-            print hex(DexStruct.DexMapList['DexMapItem'][i]['offset'])
-
-        print f.tell()
+        parseDex(f)
