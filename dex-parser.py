@@ -109,6 +109,17 @@ class DexStruct(object):
 
     DexStrings = []
 
+    DexTypes = []
+
+    # DexProto = {
+    #     'shortyDescription' : None,
+    #     'returnType' : None,
+    #     'parameters' :  [],
+    # };
+
+    DexProtos = []
+
+#-------------------------------
 
 def parseHeader(f):
         header_data = f.read(0x70)
@@ -179,8 +190,8 @@ def readuleb128(f):
                     num = num or ((cur and 0x7f) << 28)
     return num
 
-
 def parseStrings(f):
+
     f.seek(DexStruct.DexHeader['stringIdsOff'])
     stringIds_data = f.read(4*DexStruct.DexHeader['stringIdsSize'])
 
@@ -199,6 +210,51 @@ def parseStrings(f):
         DexStruct.DexStrings.append(tmpDexStringItem)
 
 
+def parseTypeDescriptions(f):
+    '''
+    此函数基于 parseStrings 函数的结果，调用前需先调用 parseStrings
+    '''
+    f.seek(DexStruct.DexHeader['typeIdsOff'])
+
+    cur_pos = 0
+    for i in range(DexStruct.DexHeader['typeIdsSize']):
+        type_desc_id = struct.unpack('I',f.read(4))[0]
+        DexStruct.DexTypes.append(DexStruct.DexStrings[type_desc_id])
+        cur_pos += 4
+
+
+def parseProtos(f):
+    '''
+    此函数基于 parseStrings 和 parseTypeDescriptions 函数的结果
+    '''
+
+    cur_pos = 0
+    for i in range(DexStruct.DexHeader['protoIdsSize']):
+        f.seek(DexStruct.DexHeader['protoIdsOff'] + cur_pos)
+
+        proto_shortyId = struct.unpack('I',f.read(4))[0]
+        proto_returnTypeId = struct.unpack('I',f.read(4))[0]
+        proto_paramtersOff = struct.unpack('I',f.read(4))[0]
+
+        parameters = []
+        if proto_paramtersOff > 0:  # 有参数再读取
+            f.seek(proto_paramtersOff)
+            param_size = struct.unpack('I',f.read(4))[0]
+
+            for j in range(param_size):
+                param_typeId = struct.unpack('H',f.read(2))[0]
+                parameters.append(DexStruct.DexTypes[param_typeId]['content'])
+
+        tmpDexProto = {
+            'shortyDescription' : DexStruct.DexStrings[proto_shortyId]['content'],
+            'returnType' : DexStruct.DexTypes[proto_returnTypeId]['content'],
+            'parameters' :  parameters,
+        };
+        DexStruct.DexProtos.append(tmpDexProto)
+
+        cur_pos += 12
+
+
 def parseDex(f):
     parseHeader(f)
     # for x in DexStruct.DexHeader:
@@ -212,12 +268,24 @@ def parseDex(f):
     #     print hex(DexStruct.DexMapList['DexMapItem'][i]['offset'])
 
     parseStrings(f)
-    for x in DexStruct.DexStrings:
-        print hex(x['offset']),x['content']
+    # for x in DexStruct.DexStrings:
+    #     print hex(x['offset']),x['content']
+
+    parseTypeDescriptions(f)
+    # for x in DexStruct.DexTypes:
+    #     print hex(x['offset']),x['content']
+
+    parseProtos(f)
+    for x in DexStruct.DexProtos:
+        print x['returnType'],
+        print '~~~~~',
+        print x['parameters']
+
+
 
 #*********************************************
 
 if __name__ == '__main__':
 
-    with open(r"classes.dex", 'rb') as f:
+    with open(r"/home/hanks/kiya/parse-apk/classes.dex", 'rb') as f:
         parseDex(f)
