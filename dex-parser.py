@@ -127,6 +127,14 @@ class DexStruct(object):
 
     DexFields = []
 
+    # DexMethodItem = {
+    #     'class' : None,
+    #     'proto' : None,
+    #     'name' : None,
+    # }
+
+    DexMethods = []
+
 #-------------------------------
 
 def parseHeader(f):
@@ -218,7 +226,7 @@ def parseStrings(f):
         DexStruct.DexStrings.append(tmpDexStringItem)
 
 
-def parseTypeDescriptions(f):
+def parseTypes(f):
     '''
     此函数基于 parseStrings 函数的结果，调用前需先调用 parseStrings
     '''
@@ -231,7 +239,7 @@ def parseTypeDescriptions(f):
 
 def parseProtos(f):
     '''
-    此函数基于 parseStrings 和 parseTypeDescriptions 函数的结果
+    此函数基于 parseStrings 和 parseTypes 函数的结果
     '''
 
     cur_pos = 0
@@ -262,7 +270,7 @@ def parseProtos(f):
 
 def parseFields(f):
     '''
-    此函数基于 parseStrings 和 parseTypeDescriptions 函数的结果
+    此函数基于 parseStrings 和 parseTypes 函数的结果
     '''
     f.seek(DexStruct.DexHeader['fieldIdsOff'])
 
@@ -277,6 +285,25 @@ def parseFields(f):
             'name' : field_name,
         }
         DexStruct.DexFields.append(tmpDexFieldItem)
+
+def parseMethods(f):
+    '''
+    此函数基于 parseStrings、parseProtos 和 parseTypes 函数的结果
+    '''
+
+    f.seek(DexStruct.DexHeader['methodIdsOff'])
+
+    for i in range(DexStruct.DexHeader['methodIdsSize']):
+        method_class = DexStruct.DexTypes[struct.unpack('H',f.read(2))[0]]['content']
+        method_proto = DexStruct.DexProtos[struct.unpack('H',f.read(2))[0]]
+        method_name = DexStruct.DexStrings[struct.unpack('I',f.read(4))[0]]['content']
+
+        tmpDexMethodItem = {
+            'class' : method_class,
+            'proto' : method_proto,
+            'name' : method_name,
+        }
+        DexStruct.DexMethods.append(tmpDexMethodItem)
 
 
 def parseDex(f):
@@ -295,18 +322,22 @@ def parseDex(f):
     # for x in DexStruct.DexStrings:
     #     print hex(x['offset']),x['content']
 
-    parseTypeDescriptions(f)
+    parseTypes(f)
     # for x in DexStruct.DexTypes:
     #     print hex(x['offset']),x['content']
 
-    # parseProtos(f)
+    parseProtos(f)
     # for x in DexStruct.DexProtos:
     #     print x['returnType'],
     #     print '~~~~~',
     #     print x['parameters']
 
-    parseFields(f)
-    for x in DexStruct.DexFields:
+    # parseFields(f)
+    # for x in DexStruct.DexFields:
+    #     print x
+
+    parseMethods(f)
+    for x in DexStruct.DexMethods:
         print x
 
 
