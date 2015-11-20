@@ -111,13 +111,21 @@ class DexStruct(object):
 
     DexTypes = []
 
-    # DexProto = {
+    # DexProtoItem = {
     #     'shortyDescription' : None,
     #     'returnType' : None,
     #     'parameters' :  [],
     # };
 
     DexProtos = []
+
+    # DexFieldItem = {
+    #     'class' : None,
+    #     'type' : None,
+    #     'name' : None,
+    # }
+
+    DexFields = []
 
 #-------------------------------
 
@@ -216,11 +224,9 @@ def parseTypeDescriptions(f):
     '''
     f.seek(DexStruct.DexHeader['typeIdsOff'])
 
-    cur_pos = 0
     for i in range(DexStruct.DexHeader['typeIdsSize']):
         type_desc_id = struct.unpack('I',f.read(4))[0]
         DexStruct.DexTypes.append(DexStruct.DexStrings[type_desc_id])
-        cur_pos += 4
 
 
 def parseProtos(f):
@@ -245,14 +251,32 @@ def parseProtos(f):
                 param_typeId = struct.unpack('H',f.read(2))[0]
                 parameters.append(DexStruct.DexTypes[param_typeId]['content'])
 
-        tmpDexProto = {
+        tmpDexProtoItem = {
             'shortyDescription' : DexStruct.DexStrings[proto_shortyId]['content'],
             'returnType' : DexStruct.DexTypes[proto_returnTypeId]['content'],
             'parameters' :  parameters,
         };
-        DexStruct.DexProtos.append(tmpDexProto)
+        DexStruct.DexProtos.append(tmpDexProtoItem)
 
         cur_pos += 12
+
+def parseFields(f):
+    '''
+    此函数基于 parseStrings 和 parseTypeDescriptions 函数的结果
+    '''
+    f.seek(DexStruct.DexHeader['fieldIdsOff'])
+
+    for i in range(DexStruct.DexHeader['fieldIdsSize']):
+        field_class = DexStruct.DexTypes[struct.unpack('H',f.read(2))[0]]['content']
+        field_type = DexStruct.DexTypes[struct.unpack('H',f.read(2))[0]]['content']
+        field_name = DexStruct.DexStrings[struct.unpack('I',f.read(4))[0]]['content']
+
+        tmpDexFieldItem = {
+            'class' : field_class,
+            'Type' : field_type,
+            'name' : field_name,
+        }
+        DexStruct.DexFields.append(tmpDexFieldItem)
 
 
 def parseDex(f):
@@ -275,11 +299,15 @@ def parseDex(f):
     # for x in DexStruct.DexTypes:
     #     print hex(x['offset']),x['content']
 
-    parseProtos(f)
-    for x in DexStruct.DexProtos:
-        print x['returnType'],
-        print '~~~~~',
-        print x['parameters']
+    # parseProtos(f)
+    # for x in DexStruct.DexProtos:
+    #     print x['returnType'],
+    #     print '~~~~~',
+    #     print x['parameters']
+
+    parseFields(f)
+    for x in DexStruct.DexFields:
+        print x
 
 
 
@@ -287,5 +315,6 @@ def parseDex(f):
 
 if __name__ == '__main__':
 
+    # with open(r"/media/d/dafuweng/ditiepaoku/classes.dex", 'rb') as f:
     with open(r"/home/hanks/kiya/parse-apk/classes.dex", 'rb') as f:
         parseDex(f)
