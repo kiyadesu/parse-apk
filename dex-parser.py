@@ -135,6 +135,19 @@ class DexStruct(object):
 
     DexMethods = []
 
+    # DexClassDef = {
+    #     'class' : class_name,
+    #     'accessFlags' : class_accessflag,
+    #     'superclass' : class_superclass,
+    #     'interfaces' : class_interface,
+    #     'sourceFile' : class_sourcefile,
+    #     'annotations' : class_annotation,
+    #     'classData' : class_classdata,
+    #     'staticValue' : class_staticvalue,
+    # }
+
+    DexClassDefs = []
+
 #-------------------------------
 
 def parseHeader(f):
@@ -225,7 +238,6 @@ def parseStrings(f):
         }
         DexStruct.DexStrings.append(tmpDexStringItem)
 
-
 def parseTypes(f):
     '''
     此函数基于 parseStrings 函数的结果，调用前需先调用 parseStrings
@@ -235,7 +247,6 @@ def parseTypes(f):
     for i in range(DexStruct.DexHeader['typeIdsSize']):
         type_desc_id = struct.unpack('I',f.read(4))[0]
         DexStruct.DexTypes.append(DexStruct.DexStrings[type_desc_id])
-
 
 def parseProtos(f):
     '''
@@ -306,6 +317,210 @@ def parseMethods(f):
         DexStruct.DexMethods.append(tmpDexMethodItem)
 
 
+def parseClassdef_Name(f):
+    return DexStruct.DexTypes[struct.unpack('I',f.read(4))[0]]['content']
+
+def parseClassdef_Accessflag(f):
+    return struct.unpack('I',f.read(4))[0]
+
+def parseClassdef_Superclass(f):
+    class_superclass_id = struct.unpack('I',f.read(4))[0]
+    if class_superclass_id == -1:
+        return None
+    return DexStruct.DexTypes[class_superclass_id]['content']
+
+def parseClassdef_Interface(f):
+    interface_off = struct.unpack('I',f.read(4))[0]
+    if interface_off == 0:
+        return None
+
+    f.seek(interface_off)
+    type_list_size = struct.unpack('I',f.read(4))[0]
+    type_list = []
+    for i in range(type_list_size):
+        type_id = struct.unpack('H',f.read(2))[0]
+        type_list.append(DexStruct.DexTypes[type_id]['content'])
+    return type_list
+
+def parseClassdef_Sourcefile(f):
+    class_sourcefile_id = struct.unpack('I',f.read(4))[0]
+    if class_sourcefile_id == -1:
+        return None
+    return DexStruct.DexStrings[class_sourcefile_id]['content']
+
+def parseClassdef_Annotations(f):
+    annotations_directory_off = struct.unpack('I',f.read(4))[0]
+    if annotations_directory_off == 0:
+        return None
+
+    #-----------
+    f.seek(annotations_directory_off)
+    class_Annotations_Off = struct.unpack('I',f.read(4))[0]
+    field_size = struct.unpack('I',f.read(4))[0]
+    method_size = struct.unpack('I',f.read(4))[0]
+    parameter_size = struct.unpack('I',f.read(4))[0]
+    #---------
+    annotations_directory = None
+    if class_Annotations_Off != 0:
+        # f.seek(class_Annotations_Off)
+        # annotation_set_item_size = struct.unpack('I',f.read(4))[0]
+        # for i in range(annotation_set_item_size):
+        #     item_visibility = struct.unpack('B',f.read(1))[0]
+        #     item_annotation = struct.unpack('B',f.read(1))[0]
+        pass    # 解码暂且略过
+    #--------
+    f.seek(annotations_directory_off+4*4)
+    fieldAnnotation_list = []
+    for i in range(field_size):
+        field = DexStruct.DexFields[struct.unpack('I',f.read(4))[0]]
+        field_annotation_off = struct.unpack('I',f.read(4))[0]
+        fieldAnnotation_item = {
+            'field' : field,
+            'annotationsOff' : field_annotation_off,
+        }
+        fieldAnnotation_list.append(fieldAnnotation_item)
+    #--------
+    f.seek(annotations_directory_off+4*4+field_size*8)
+    methodAnnotation_list = []
+    for i in range(method_size):
+        method= DexStruct.DexMethods[struct.unpack('I',f.read(4))[0]]
+        method_annotation_off = struct.unpack('I',f.read(4))[0]
+        methodAnnotation_item = {
+            'method' : method,
+            'annotationsOff' : method_annotation_off,
+        }
+        methodAnnotation_list.append(methodAnnotation_item)
+    #--------
+    f.seek(annotations_directory_off+4*4+field_size*8+method_size*8)
+    parameterAnnotation_list = []
+    for i in range(parameter_size):
+        param_method = DexStruct.DexMethods[struct.unpack('I',f.read(4))[0]]
+        param_annotation_off = struct.unpack('I',f.read(4))[0]
+        parameterAnnotation_item = {
+            'method' : param_method,
+            'annotationsOff' : param_annotation_off,
+        }
+        parameterAnnotation_list.append(parameterAnnotation_item)
+
+    tmpDexAnnotationsDirectoryItem = {
+        'classAnnotations' : annotations_directory,
+        'fieldSize' : field_size,
+        'methodSize' : method_size,
+        'parameterSize' : parameter_size,
+        'fieldAnnotation' : fieldAnnotation_list,
+        'methodAnnotation' : methodAnnotation_list,
+        'parameterAnnotaions' : parameterAnnotation_list,
+    }
+    return tmpDexAnnotationsDirectoryItem
+
+def parseClassdef_ClassData(f):
+    class_data_off = struct.unpack('I',f.read(4))[0]
+    if class_data_off == 0:
+        return None
+
+    f.seek(class_data_off)
+
+    #-----
+    header = {
+        'staticFieldsSize' : readuleb128(f),
+        'instanceFieldsSize' :  readuleb128(f),
+        'directMethodsSize' : readuleb128(f),
+        'virtualMethodsSize' : readuleb128(f),
+    }
+    #-----
+    staticFields = []
+    if header['staticFieldsSize'] != 0:
+        for i in range(header['staticFieldsSize']):
+            tmpstaticFields = {
+                'field' : DexStruct.DexFields[readuleb128(f)],
+                'accessFlags' : readuleb128(f)
+            }
+            staticFields.append(tmpstaticFields)
+    #-----------
+    instanceFields = []
+    if header['instanceFieldsSize'] != 0:
+        for i in range(header['instanceFieldsSize']):
+            tmpinstanceFields = {
+                'field' : DexStruct.DexFields[readuleb128(f)],
+                'accessFlags' : readuleb128(f)
+            }
+            instanceFields.append(tmpinstanceFields)
+    #-----
+    directMethods = []
+    if header['directMethodsSize'] != 0:
+        for i in range(header['directMethodsSize']):
+            tmpdirectMethods = {
+                'method' : DexStruct.DexMethods[readuleb128(f)],
+                'accessFlags' : readuleb128(f),
+                'codeOff': readuleb128(f),
+                ####### dexcode 还没解析
+            }
+            directMethods.append(tmpdirectMethods)
+    #-----
+    virtualMethods = []
+    if header['virtualMethodsSize'] != 0:
+        for i in range(header['virtualMethodsSize']):
+            tmpvirtualMethods = {
+                'method' : DexStruct.DexMethods[readuleb128(f)],
+                'accessFlags' : readuleb128(f),
+                'codeOff' : readuleb128(f)
+                ####### dexcode 还没解析
+            }
+            virtualMethods.append(tmpvirtualMethods)
+
+    DexClassData = {
+        'DexClassDataHeader' : header,
+        'staticFields' : staticFields,
+        'instanceFields' : instanceFields,
+        'directMethods' : directMethods,
+        'virtualMethods' : virtualMethods,
+    }
+
+    return DexClassData
+
+def parseClassdef_StaticValue(f):
+    staticvalue_off = struct.unpack('I',f.read(4))[0]
+    if staticvalue_off == 0:
+        return None
+    return None ## 还没解析 encoded value
+
+def parseClassdefs(f):
+    '''
+    此函数基于之前所有的函数结果
+    '''
+
+    for i in range(DexStruct.DexHeader['classDefsSize']):
+        item_off = i*4*8 + DexStruct.DexHeader['classDefsOff']
+        f.seek(item_off)
+
+        class_name = parseClassdef_Name(f)
+        class_accessflag = parseClassdef_Accessflag(f)
+        class_superclass = parseClassdef_Superclass(f)
+
+        class_interface = parseClassdef_Interface(f)
+        f.seek(item_off+4*4)
+
+        class_sourcefile = parseClassdef_Sourcefile(f)
+        class_annotation = parseClassdef_Annotations(f)
+        f.seek(item_off+4*6)
+
+        class_classdata = parseClassdef_ClassData(f)
+
+        f.seek(item_off+4*7)
+        class_staticvalue = parseClassdef_StaticValue(f)
+
+        tmpDexClassDef = {
+            'class' : class_name,
+            'accessFlags' : class_accessflag,
+            'superclass' : class_superclass,
+            'interfaces' : class_interface,
+            'sourceFile' : class_sourcefile,
+            'annotations' : class_annotation,
+            'classData' : class_classdata,
+            'staticValue' : class_staticvalue,
+        }
+        DexStruct.DexClassDefs.append(tmpDexClassDef)
+
 def parseDex(f):
     parseHeader(f)
     # for x in DexStruct.DexHeader:
@@ -337,8 +552,10 @@ def parseDex(f):
     #     print x
 
     parseMethods(f)
-    for x in DexStruct.DexMethods:
-        print x
+    # for x in DexStruct.DexMethods:
+    #     print x
+
+    parseClassdefs(f)
 
 
 
