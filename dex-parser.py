@@ -207,17 +207,43 @@ def readuleb128(f):
     num = struct.unpack('B',f.read(1))[0]     # 读第一字节
     if num > 0x7f :
         cur = struct.unpack('B',f.read(1))[0]     #读第二字节
-        num = (num and 0x7f) or ((cur and 0x7f) << 7)
+        num = (num & 0x7f) | ((cur & 0x7f) << 7)
         if cur > 0x7f:
             cur = struct.unpack('B',f.read(1))[0]     #读第三字节
-            num = num or ((cur and 0x7f) << 14)
+            num = num | ((cur & 0x7f) << 14)
             if cur > 0x7f:
                 cur = struct.unpack('B',f.read(1))[0]     #读第四字节
-                num = num or ((cur and 0x7f) << 21)
+                num = num | ((cur & 0x7f) << 21)
                 if cur > 0x7f:
                     cur = struct.unpack('B',f.read(1))[0]     #读第五字节
-                    num = num or ((cur and 0x7f) << 28)
+                    num = num | ((cur & 0x7f) << 28)
     return num
+
+def readsleb128(f):
+    num = struct.unpack('B',f.read(1))[0]     # 读第一字节
+    if num < 0x7f:
+        num = num | 0xffffff80
+    else:
+        cur = struct.unpack('B',f.read(1))[0]     #读第二字节
+        num = (num & 0x7f) | ((cur & 0x7f) << 7)
+        if cur < 0x7f:
+            num = num | 0xffff8000
+        else:
+            cur = struct.unpack('B',f.read(1))[0]     #读第三字节
+            num = num | ((cur & 0x7f) << 14)
+            if cur < 0x7f:
+                num = num | 0xff800000
+            else:
+                cur = struct.unpack('B',f.read(1))[0]     #读第四字节
+                num = num | ((cur & 0x7f) << 21)
+                if cur < 0x7f:
+                    num = num | 0x80000000
+                else:
+                    cur = struct.unpack('B',f.read(1))[0]     #读第五字节
+                    num = num | ((cur & 0x7f) << 28)
+
+    return num
+
 
 def parseStrings(f):
 
@@ -325,7 +351,7 @@ def parseClassdef_Accessflag(f):
 
 def parseClassdef_Superclass(f):
     class_superclass_id = struct.unpack('I',f.read(4))[0]
-    if class_superclass_id == -1:
+    if class_superclass_id == 0xffffffff:
         return None
     return DexStruct.DexTypes[class_superclass_id]['content']
 
@@ -344,7 +370,7 @@ def parseClassdef_Interface(f):
 
 def parseClassdef_Sourcefile(f):
     class_sourcefile_id = struct.unpack('I',f.read(4))[0]
-    if class_sourcefile_id == -1:
+    if class_sourcefile_id == 0xffffffff:
         return None
     return DexStruct.DexStrings[class_sourcefile_id]['content']
 
@@ -371,8 +397,11 @@ def parseClassdef_Annotations(f):
     #--------
     f.seek(annotations_directory_off+4*4)
     fieldAnnotation_list = []
+    print hex(f.tell())
     for i in range(field_size):
-        field = DexStruct.DexFields[struct.unpack('I',f.read(4))[0]]
+        x = struct.unpack('I',f.read(4))[0]
+        print x
+        field = DexStruct.DexFields[x]
         field_annotation_off = struct.unpack('I',f.read(4))[0]
         fieldAnnotation_item = {
             'field' : field,
@@ -413,6 +442,64 @@ def parseClassdef_Annotations(f):
     }
     return tmpDexAnnotationsDirectoryItem
 
+def parseClassdef_ClassData_DexCode(f):
+    registersSize = struct.unpack('H',f.read(2))[0]
+    insSize = struct.unpack('H',f.read(2))[0]
+    outsSize = struct.unpack('H',f.read(2))[0]
+    triesSize = struct.unpack('H',f.read(2))[0]
+    debugInfoOff = struct.unpack('I',f.read(4))[0]  #相应的debug_info还未解析
+    insnsSize = struct.unpack('I',f.read(4))[0]
+    insns = f.read(insnsSize*2)
+    if (triesSize !=0) and (insnsSize % 2 != 0):
+        f.read(2)
+
+    dexCode = {
+        'registersSize' : registersSize,
+        'insSize' : insnsSize,
+        'outsSize' : outsSize,
+        'triesSize' : triesSize,
+        'debugInfoOff' : debugInfoOff,
+        'insnsSize' : insnsSize,
+        'insns' : insns,
+    }
+
+    dexTry = []
+    dexHandlerList = []
+    if triesSize != 0:
+        for i in range(triesSize):
+
+            tmpDexTry = {
+                'startAddr' : struct.unpack('I',f.read(4))[0],
+                'insnCount' : struct.unpack('H',f.read(2))[0],
+                'handlerOff' : struct.unpack('H',f.read(2))[0]
+            }
+            dexTry.append(tmpDexTry)
+
+        handler_list_size = readuleb128(f)
+
+        for i in range(handler_list_size):
+            handler_size = readuleb128(f) # 此处应为sleb128，还未测试
+            handlers = []
+            for j in range(handler_size):
+                typeid = readuleb128(f)
+                handler_addr = readuleb128(f)
+                tmpDexCatchHandler = {
+                    'type' : DexStruct.DexTypes[typeid]['content'],
+                    'address' : handler_addr
+                }
+                handlers.append(tmpDexCatchHandler)
+            catch_all_addr = None
+            if handler_size <= 0:
+                catch_all_addr = readuleb128(f)
+            handler_list_item = {
+                'size' : handler_size,
+                'handlers' : handlers,
+                'catchAllAddr' : catch_all_addr
+            }
+            dexHandlerList.append(handler_list_item)
+
+    return (dexCode,dexTry,dexHandlerList)
+
 def parseClassdef_ClassData(f):
     class_data_off = struct.unpack('I',f.read(4))[0]
     if class_data_off == 0:
@@ -449,11 +536,19 @@ def parseClassdef_ClassData(f):
     directMethods = []
     if header['directMethodsSize'] != 0:
         for i in range(header['directMethodsSize']):
+            direct_method = DexStruct.DexMethods[readuleb128(f)]
+            direct_accessflags = readuleb128(f)
+            direct_codeoff = readuleb128(f)
+            cur_offset = f.tell()
+
+            f.seek(direct_codeoff)
+            direct_code = parseClassdef_ClassData_DexCode(f)
+            f.seek(cur_offset)
+
             tmpdirectMethods = {
-                'method' : DexStruct.DexMethods[readuleb128(f)],
-                'accessFlags' : readuleb128(f),
-                'codeOff': readuleb128(f),
-                ####### dexcode 还没解析
+                'method' : direct_method,
+                'accessFlags' : direct_accessflags,
+                'code': direct_code,
             }
             directMethods.append(tmpdirectMethods)
     #-----
@@ -519,12 +614,15 @@ def parseClassdefs(f):
             'classData' : class_classdata,
             'staticValue' : class_staticvalue,
         }
+        # print tmpDexClassDef
+        # for x in tmpDexClassDef['classData']:
+        #     print x,tmpDexClassDef['classData'][x]
         DexStruct.DexClassDefs.append(tmpDexClassDef)
 
 def parseDex(f):
     parseHeader(f)
     # for x in DexStruct.DexHeader:
-    #     print x, hex(DexStruct.DexHeader[x])
+    #     print x, DexStruct.DexHeader[x]
 
     # parseMapList(f)
     # l = len(DexStruct.DexMapList['DexMapItem'])
@@ -547,7 +645,7 @@ def parseDex(f):
     #     print '~~~~~',
     #     print x['parameters']
 
-    # parseFields(f)
+    parseFields(f)
     # for x in DexStruct.DexFields:
     #     print x
 
@@ -563,6 +661,6 @@ def parseDex(f):
 
 if __name__ == '__main__':
 
-    # with open(r"/media/d/dafuweng/ditiepaoku/classes.dex", 'rb') as f:
-    with open(r"/home/hanks/kiya/parse-apk/classes.dex", 'rb') as f:
+    with open(r"/home/hanks/kiya/Android/reverse-engineering/smali/HeyTry.dex", 'rb') as f:
+    # with open(r"/home/hanks/kiya/parse-apk/classes.dex", 'rb') as f:
         parseDex(f)
