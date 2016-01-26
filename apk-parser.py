@@ -4,6 +4,7 @@
 from utils import read_file
 from zipfile import ZipFile
 from StringIO import StringIO
+import sys
 import os.path
 
 
@@ -26,5 +27,9 @@ class apkParser():
         print self.parse()
 
 if __name__ == '__main__':
-    apk = apkParser('LightningBackup.apk')
-    apk.parse()
+    if len(sys.argv) == 2:
+        apk_path = sys.argv[1]
+        apk = apkParser(apk_path)
+        apk.parse()
+    else:
+        print 'error: must be like "python parse-apk.py ./test.apk"'
